@@ -104,7 +104,7 @@ def _call_llm(prompt: str) -> str:
                 {"role": "user", "content": prompt},
             ],
         },
-        timeout=60,
+        timeout=8,
     )
     data = resp.json()
     if "choices" not in data:
