@@ -53,8 +53,9 @@ def analyze_growth(financial: dict, years: int = 5) -> dict:
 
 
 def analyze_retirement(financial: dict) -> dict:
-    """은퇴 준비도 분석 (Advanced 모드)"""
+    """은퇴 준비도 분석"""
     retirement_age = financial.get("retirement_age") or 65
+    age = financial.get("age") or 35  # 실제 나이 우선 사용
     assets = financial.get("assets", 0)
     debt = financial.get("debt", 0)
     expense = financial.get("expense", 0)
@@ -62,7 +63,7 @@ def analyze_retirement(financial: dict) -> dict:
     dependents = financial.get("dependents", "없음")
     asset_sale_cost = financial.get("asset_sale_cost") or 0
 
-    years_to_retire = max(retirement_age - 35, 1)  # 현재 나이 35세 가정
+    years_to_retire = max(retirement_age - age, 1)
     net_assets = max(assets - debt - asset_sale_cost, 0)
     projected = round(net_assets * ((1 + inv_return / 100) ** years_to_retire))
 
@@ -116,19 +117,16 @@ def _call_llm(prompt: str) -> str:
 def _parse_json(text: str) -> dict:
     text = text.strip()
 
-    # <think>...</think> 태그 제거 (일부 모델)
     if "<think>" in text:
         end = text.find("</think>")
         if end != -1:
             text = text[end + len("</think>"):].strip()
 
-    # 코드블록 추출
     for marker in ["```json", "```"]:
         if marker in text:
             text = text.split(marker)[1].split("```")[0].strip()
             break
 
-    # JSON 객체 범위 추출 (앞뒤 텍스트 무시)
     start = text.find("{")
     end = text.rfind("}") + 1
     if start != -1 and end > start:
@@ -147,32 +145,30 @@ def generate_advice(payload: dict) -> dict:
     scenarios = payload.get("scenarios", [])
     action_sims = payload.get("action_simulations", {})
 
-    # 추가 분석 수행 (데이터가 있을 때만)
     extra_sections = []
 
     has_growth = bool(financial.get("income_growth_rate") or financial.get("expense_growth_rate"))
-    has_advanced = bool(financial.get("retirement_age"))
 
     if has_growth or financial.get("investment_return_rate"):
         growth = analyze_growth(financial)
         extra_sections.append(f"[미래 재무 예측 (5년)]\n{json.dumps(growth, ensure_ascii=False, indent=2)}")
 
-    if has_advanced:
+    if financial.get("retirement_age"):
         retirement = analyze_retirement(financial)
         extra_sections.append(f"[은퇴 준비도 분석]\n{json.dumps(retirement, ensure_ascii=False, indent=2)}")
 
-    # 파생 수치 계산 (프롬프트에서 구체적 금액 언급용)
     income = financial.get("income", 0)
     expense = financial.get("expense", 0)
     debt = financial.get("debt", 0)
     assets = financial.get("assets", 0)
     credit_score = financial.get("credit_score")
     delinquency = financial.get("delinquency", "없음")
+    age = financial.get("age")
 
     monthly_surplus = round((income - expense) / 12, 1)
-    expense_cut_amount = round(expense * 0.15)       # 지출 15% 절감 시 절약액
-    debt_payoff_amount = round(debt * 0.2)           # 부채 20% 상환 금액
-    income_increase_amount = round(income * 0.1)     # 소득 10% 증가액
+    expense_cut_amount = round(expense * 0.15)
+    debt_payoff_amount = round(debt * 0.2)
+    income_increase_amount = round(income * 0.1)
 
     exp_red_prob = action_sims.get("expense_reduction", {}).get("probability", risk.get("probability"))
     debt_red_prob = action_sims.get("debt_reduction", {}).get("probability", risk.get("probability"))
@@ -185,36 +181,78 @@ def generate_advice(payload: dict) -> dict:
         credit_lines.append(f"- 연체 이력: {delinquency} (신용 하락 위험 요소)")
 
     survival = risk.get("survival_years", 999)
-    survival_str = "사실상 무한 (수입 > 지출)" if survival == 999 else f"{survival}년"
+    survival_str = "사실상 무한 (수입 > 지출, 부채 없음)" if survival == 0 and risk.get("survival_mode") == "stable" else f"{survival}년"
+
+    # 나이대 컨텍스트 구성
+    age_context = ""
+    age_percentile = risk.get("age_percentile", {})
+    if age and age_percentile:
+        age_group = age_percentile.get("age_group", "")
+        pct = age_percentile.get("percentile", 50)
+        top_pct = age_percentile.get("top_percent", 50)
+        age_context = f"""
+━━━ 나이대 비교 ━━━
+• 나이: {age}세 ({age_group})
+• 동 나이대 리스크 위치: {age_group} 중 상위 {top_pct}% (동 나이대 {round(pct)}%보다 높은 리스크)
+• 라이프스테이지 특성: {'사회초년생 — 소득 기반 구축이 핵심 과제' if age < 30 else '가정·주택 형성기 — 부채 관리와 저축 균형 중요' if age < 40 else '자산 증식기 — 은퇴 준비 병행 필요' if age < 50 else '노후 준비 집중기 — 안정적 자산 배분이 우선' if age < 60 else '은퇴 전후기 — 소득 대체 전략 핵심'}
+"""
+    elif age:
+        from app.risk_model import get_age_group
+        age_group = get_age_group(age)
+        age_context = f"\n━━━ 나이대 정보 ━━━\n• 나이: {age}세 ({age_group})\n"
+
+    # 리스크 수준별 상담 기조 설정
+    prob = risk.get("probability", 0)
+    level = risk.get("level", "보통")
+    if prob >= 60:
+        tone_guide = "현재 리스크가 매우 높으므로, 즉각적인 개선이 필요한 긴급 상황으로 다루세요. 실행 가능한 구체적 행동을 최우선으로 제시해주세요."
+    elif prob >= 30:
+        tone_guide = "리스크가 보통 수준이므로, 꾸준한 관리와 점진적 개선 방향으로 조언해주세요."
+    else:
+        tone_guide = "리스크가 낮아 양호한 편이므로, 현 상태 유지와 자산 성장 최적화에 초점을 맞추세요."
+
+    # 시나리오 요약 (테마 포함)
+    scenario_lines = []
+    for s in scenarios:
+        direction_emoji = "📉" if s.get("direction") in ("negative", "crisis") else "📈"
+        scenario_lines.append(
+            f"• [{s.get('theme', s['name'])}] {s['name']}: {risk.get('probability')}% → {s['result']['probability']}%"
+            + (f" ({age_percentile.get('age_group','')} 중 상위 {s['result'].get('age_percentile',{}).get('top_percent','')}%)" if s['result'].get('age_percentile') else "")
+        )
 
     prompt = f"""당신은 친근하고 전문적인 개인 재무 상담사입니다.
 아래 고객의 재무 데이터를 분석하고, 마치 1:1 상담처럼 구체적이고 따뜻한 어조로 조언해 주세요.
 반드시 JSON 형식으로만 응답하세요.
 
+{age_context}
 ━━━ 고객 재무 현황 ━━━
 • 연 수입: {income}만원 / 연 지출: {expense}만원
 • 월 여유자금: {monthly_surplus}만원 {'(흑자)' if monthly_surplus >= 0 else '(적자 — 매달 부족)'}
 • 총 부채: {debt}만원 / 총 자산: {assets}만원 / 순자산: {assets - debt}만원
-• 부채 부담률: {risk.get('debt_ratio')} (연 수입의 {risk.get('debt_ratio')}배)
+• 부채/수입 비율: {round(debt/max(income,1), 2)}배 (연 수입의 {round(debt/max(income,1), 2)}배)
 • 자금 유지 가능 기간: {survival_str}
 {chr(10).join(credit_lines) if credit_lines else '• 신용 정보: 미입력'}
 
 ━━━ 리스크 진단 결과 ━━━
-• 신용 리스크 확률: {risk.get('probability')}% (수준: {risk.get('level')})
+• 신용 리스크 확률: {prob}% (수준: {level})
 
 ━━━ 행동별 리스크 개선 효과 ━━━
-• 연간 {expense_cut_amount}만원 지출 절감(15%) 시 → 리스크 {exp_red_prob}%
-• 부채 {debt_payoff_amount}만원 상환(20%) 시 → 리스크 {debt_red_prob}%
-• 연 수입 {income_increase_amount}만원 증가(10%) 시 → 리스크 {inc_inc_prob}%
+• 연간 {expense_cut_amount}만원 지출 절감(15%) → 리스크 {exp_red_prob}%
+• 부채 {debt_payoff_amount}만원 상환(20%) → 리스크 {debt_red_prob}%
+• 연 수입 {income_increase_amount}만원 증가(10%) → 리스크 {inc_inc_prob}%
 
-━━━ 시나리오 분석 ━━━
-{chr(10).join([f"• {s['name']}: 리스크 {s['result']['probability']}%" for s in scenarios])}
+━━━ 시나리오 분석 요약 ━━━
+{chr(10).join(scenario_lines)}
 
 {chr(10).join(extra_sections)}
 
+━━━ 상담 기조 ━━━
+{tone_guide}
+{'나이와 생애주기를 반드시 반영하여 ' + str(age) + '세에게 현실적인 조언을 해주세요.' if age else ''}
+
 ━━━ 응답 형식 (JSON만, 다른 텍스트 없이) ━━━
 {{
-  "summary": "고객에게 직접 말하는 듯한 어조로 현재 상황을 2~3문장으로 설명. 구체적 금액과 수치 포함. 신용정보·미래예측·은퇴분석 결과가 있으면 반드시 언급.",
+  "summary": "고객에게 직접 말하는 어투로 현재 상황을 2~3문장으로 설명. 구체적 금액·수치·나이대 위치 포함. 신용정보·미래예측·은퇴분석 결과가 있으면 반드시 언급.",
   "risk_factors": [
     "리스크 요인 1 (구체적 수치 포함, 예: 부채가 연 수입의 3.7배로 상환 부담 과중)",
     "리스크 요인 2",
@@ -223,8 +261,8 @@ def generate_advice(payload: dict) -> dict:
   "actions": [
     {{
       "title": "행동 제목 (간결하게)",
-      "description": "마치 상담사가 직접 설명하듯 구체적으로. 어디서, 얼마를, 어떻게 줄이거나 늘릴지 명시. 월/연 금액 기준으로 설명.",
-      "impact": "이 행동을 하면 리스크가 {risk.get('probability')}% → XX%로 줄어들어요. 연간 XX만원 절약 또는 부채 부담률 X.X → X.X로 개선 등 구체적 효과.",
+      "description": "상담사가 직접 설명하듯 구체적으로. 어디서, 얼마를, 어떻게 줄이거나 늘릴지 명시.",
+      "impact": "이 행동을 하면 리스크가 {prob}% → XX%로 줄어들어요. 구체적 효과 포함.",
       "priority": "high"
     }}
   ]
@@ -235,7 +273,8 @@ def generate_advice(payload: dict) -> dict:
 2. actions는 3~5개, 가장 효과 큰 순서로 정렬
 3. priority는 high/medium/low 중 하나
 4. 모든 impact에 리스크 변화 수치 필수 포함
-5. 신용점수가 낮거나 연체 이력이 있으면 신용 회복 action 반드시 포함"""
+5. 신용점수가 낮거나 연체 이력이 있으면 신용 회복 action 반드시 포함
+6. 나이대가 있는 경우 해당 연령에 맞는 현실적 행동을 권장"""
 
     try:
         content = _call_llm(prompt)
@@ -250,6 +289,8 @@ def _rule_based_advice(financial: dict, risk: dict, action_sims: dict) -> dict:
     prob = risk.get("probability", 0)
     debt_ratio = risk.get("debt_ratio", 0)
     level = risk.get("level", "보통")
+    age = financial.get("age")
+    age_percentile = risk.get("age_percentile", {})
 
     actions = []
 
@@ -282,7 +323,7 @@ def _rule_based_advice(financial: dict, risk: dict, action_sims: dict) -> dict:
 
     risk_factors = []
     if debt_ratio > 3:
-        risk_factors.append(f"부채 부담률 {debt_ratio} — 수입 대비 부채가 매우 높음")
+        risk_factors.append(f"부채 부담률 {debt_ratio}배 — 수입 대비 부채가 매우 높음")
     if financial.get("expense", 0) > financial.get("income", 1):
         risk_factors.append("지출이 수입을 초과 — 자산 잠식 중")
     delinquency = financial.get("delinquency", "없음")
@@ -295,9 +336,13 @@ def _rule_based_advice(financial: dict, risk: dict, action_sims: dict) -> dict:
     if not risk_factors:
         risk_factors.append("전반적 재무 지표 개선 필요")
 
-    summary = f"현재 리스크 수준은 '{level}'({prob}%)입니다. "
+    age_note = ""
+    if age and age_percentile:
+        age_note = f" {age_percentile.get('label', '')}에 해당합니다."
+
+    summary = f"현재 리스크 수준은 '{level}'({prob}%)입니다.{age_note} "
     if debt_ratio > 3:
-        summary += f"부채 부담률({debt_ratio})이 매우 높아 즉각적인 부채 관리가 필요합니다."
+        summary += f"부채 부담률({debt_ratio}배)이 매우 높아 즉각적인 부채 관리가 필요합니다."
     else:
         summary += "지속적인 지출 관리와 소득 증대를 통해 리스크를 낮출 수 있습니다."
 
@@ -313,7 +358,7 @@ def _rule_based_advice(financial: dict, risk: dict, action_sims: dict) -> dict:
 # ─────────────────────────────────────────
 
 def generate_chat_reply(message: str, context: dict) -> str:
-    """분석 결과를 바탕으로 사용자 질문에 맞춤 답변 (일반 텍스트 반환)"""
+    """분석 결과를 바탕으로 사용자 질문에 맞춤 답변"""
     financial = context.get("input", context)
     risk = context.get("risk", {})
     advice = context.get("advice", {})
@@ -324,6 +369,7 @@ def generate_chat_reply(message: str, context: dict) -> str:
     assets = financial.get("assets", 0)
     credit_score = financial.get("credit_score")
     delinquency = financial.get("delinquency", "없음")
+    age = financial.get("age")
 
     try:
         monthly_surplus = round((income - expense) / 12, 1)
@@ -340,6 +386,14 @@ def generate_chat_reply(message: str, context: dict) -> str:
         survival_str = f"자산 소진까지 {survival_years}년"
     else:
         survival_str = "안정적"
+
+    age_line = ""
+    if age:
+        age_percentile = risk.get("age_percentile", {})
+        if age_percentile:
+            age_line = f"• 나이: {age}세 / {age_percentile.get('label', '')}\n"
+        else:
+            age_line = f"• 나이: {age}세\n"
 
     extra_lines = []
     if credit_score:
@@ -361,7 +415,7 @@ def generate_chat_reply(message: str, context: dict) -> str:
 고객의 재무 데이터를 바탕으로 질문에 구체적이고 친근하게 답변하세요.
 
 ━━━ 고객 재무 현황 ━━━
-• 연 수입: {income}만원 / 연 지출: {expense}만원
+{age_line}• 연 수입: {income}만원 / 연 지출: {expense}만원
 • 월 여유자금: {monthly_surplus}만원
 • 총 부채: {debt}만원 / 총 자산: {assets}만원 / 순자산: {net_worth}만원
 • 신용 리스크: {risk.get('probability', '미분석')}% ({risk.get('level', '')})
@@ -384,7 +438,6 @@ def generate_chat_reply(message: str, context: dict) -> str:
 
     try:
         reply = _call_llm(prompt).strip()
-        # JSON이 반환된 경우 텍스트 추출
         if reply.startswith("{"):
             import json as _json
             parsed = _json.loads(reply)

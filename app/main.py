@@ -1,5 +1,7 @@
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from app.risk_model import calculate_risk
 from app.scenario import run_scenarios
@@ -19,7 +21,13 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    html_path = os.path.join(os.path.dirname(__file__), "..", "public", "index.html")
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return HTMLResponse(content=content)
+    except FileNotFoundError:
+        return {"status": "ok"}
 
 
 @app.post("/analyze")

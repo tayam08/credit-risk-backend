@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>신용 리스크 분석기</title>
+<style>
+:root {
+  --bg: #f0f4f8;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --primary: #1e40af;
+  --primary-light: #dbeafe;
+  --text: #1e293b;
+  --sub: #64748b;
+  --green: #059669;
+  --green-light: #d1fae5;
+  --orange: #d97706;
+  --orange-light: #fef3c7;
+  --red: #dc2626;
+  --red-light: #fee2e2;
+  --blue: #2563eb;
+  --purple: #7c3aed;
+  --purple-light: #ede9fe;
+  --radius: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.header {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+  color: white;
+  padding: 20px 24px;
+  text-align: center;
+}
+.header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.header p { font-size: 0.85rem; opacity: 0.8; margin-top: 4px; }
+
+/* ── Layout ── */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .container { grid-template-columns: 1fr; }
+}
+
+/* ── Card ── */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.card-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--primary);
+  background: var(--primary-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-body { padding: 18px; }
+
+/* ── Form ── */
+.form-section { margin-bottom: 20px; }
+.form-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sub);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.field .hint {
+  font-size: 0.72rem;
+  color: var(--sub);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.field input, .field select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: white;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+}
+.field input:focus, .field select:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+.field input[type="number"] { -moz-appearance: textfield; }
+.field input[type="number"]::-webkit-outer-spin-button,
+.field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--blue);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 0;
+  border: none;
+  background: none;
+}
+.advanced-toggle:hover { color: var(--primary); }
+.advanced-section { display: none; }
+.advanced-section.open { display: block; }
+
+.btn-analyze {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #1e40af, #2563eb);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+  letter-spacing: -0.01em;
+}
+.btn-analyze:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+.btn-analyze:active { transform: translateY(0); }
+.btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* ── Results ── */
+.results { display: none; }
+.results.visible { display: block; }
+
+/* ── Risk Summary Row ── */
+.risk-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .risk-summary-row { grid-template-columns: 1fr; }
+}
+
+/* ── Risk Gauge ── */
+.gauge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+.gauge-svg { width: 140px; height: 140px; }
+.gauge-value { font-size: 1.6rem; font-weight: 800; fill: var(--text); }
+.gauge-label { font-size: 0.7rem; fill: var(--sub); }
+.gauge-level {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 8px;
+  padding: 4px 16px;
+  border-radius: 20px;
+}
+.level-low { background: var(--green-light); color: var(--green); }
+.level-medium { background: var(--orange-light); color: var(--orange); }
+.level-high { background: var(--red-light); color: var(--red); }
+
+/* ── Age Percentile ── */
+.age-pct-box { padding: 16px 18px; }
+.age-pct-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sub);
+  margin-bottom: 6px;
+}
+.age-pct-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  line-height: 1.3;
+}
+.pct-bar-wrap { position: relative; margin-bottom: 6px; }
+.pct-bar-track {
+  height: 10px;
+  background: linear-gradient(to right, var(--green), #fbbf24, var(--red));
+  border-radius: 5px;
+  position: relative;
+}
+.pct-marker {
+  position: absolute;
+  top: -4px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border: 3px solid var(--text);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  transition: left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.pct-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--sub);
+  margin-top: 8px;
+}
+.pct-desc {
+  font-size: 0.78rem;
+  color: var(--sub);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.pct-desc strong { color: var(--text); }
+
+/* ── Metrics Row ── */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 500px) {
+  .metrics-row { grid-template-columns: 1fr 1fr; }
+}
+.metric-card {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+.metric-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+.metric-unit { font-size: 0.72rem; font-weight: 400; color: var(--sub); }
+.metric-label { font-size: 0.72rem; color: var(--sub); margin-top: 2px; }
+
+/* ── Section Label ── */
+.section-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 20px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Advice ── */
+.advice-summary {
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  margin-bottom: 14px;
+  color: #1e3a5f;
+}
+
+.risk-factors { margin-bottom: 14px; }
+.risk-factor-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.84rem;
+  border-bottom: 1px dashed var(--border);
+  color: var(--text);
+}
+.risk-factor-item:last-child { border-bottom: none; }
+.risk-factor-icon { color: var(--red); flex-shrink: 0; margin-top: 2px; }
+
+.action-cards { display: flex; flex-direction: column; gap: 10px; }
+.action-card {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+.action-title { font-size: 0.88rem; font-weight: 700; color: var(--text); }
+.priority-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.priority-high { background: var(--red-light); color: var(--red); }
+.priority-medium { background: var(--orange-light); color: var(--orange); }
+.priority-low { background: var(--green-light); color: var(--green); }
+.action-body { padding: 10px 14px; }
+.action-desc { font-size: 0.83rem; color: var(--sub); margin-bottom: 6px; line-height: 1.6; }
+.action-impact {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Scenarios ── */
+.scenarios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.scenario-card {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.scenario-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.scenario-card-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.scenario-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.scenario-icon { font-size: 1.1rem; }
+.scenario-theme {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.scenario-premise {
+  font-size: 0.76rem;
+  color: var(--sub);
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.scenario-card-body { padding: 12px 14px; }
+
+.scenario-risk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.s-risk-before { font-size: 1rem; font-weight: 700; color: var(--sub); }
+.s-arrow { font-size: 1.2rem; }
+.s-risk-after { font-size: 1.3rem; font-weight: 800; }
+.s-risk-delta {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+.delta-up { background: var(--red-light); color: var(--red); }
+.delta-down { background: var(--green-light); color: var(--green); }
+.delta-neutral { background: var(--border); color: var(--sub); }
+
+.scenario-age-pct {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.s-age-title {
+  font-size: 0.7rem;
+  color: var(--sub);
+  margin-bottom: 4px;
+}
+.s-age-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.s-age-before { color: var(--sub); }
+.s-age-arrow { color: var(--sub); font-size: 0.9rem; }
+.s-age-after { }
+
+.s-pct-mini-bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  margin-top: 5px;
+  position: relative;
+}
+.s-pct-mini-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--green), #fbbf24, var(--red));
+  transition: width 0.6s ease;
+}
+
+/* scenario direction colors */
+.dir-negative .scenario-card-header { background: #fff5f5; }
+.dir-positive .scenario-card-header { background: #f0fdf4; }
+.dir-crisis .scenario-card-header { background: #fffbeb; }
+
+/* ── Chat ── */
+.chat-messages {
+  height: 220px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.chat-msg {
+  max-width: 85%;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.bot {
+  align-self: flex-start;
+  background: white;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+.chat-input {
+  flex: 1;
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.chat-input:focus { outline: none; border-color: var(--blue); }
+.chat-send {
+  padding: 9px 16px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.chat-send:hover { background: var(--blue); }
+.chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Loading ── */
+.loading-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,0.85);
+  z-index: 999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+}
+.loading-overlay.show { display: flex; }
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 0.9rem; color: var(--sub); font-weight: 600; }
+
+/* ── Util ── */
+.text-green { color: var(--green); }
+.text-red { color: var(--red); }
+.text-orange { color: var(--orange); }
+.text-blue { color: var(--blue); }
+.mt-8 { margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">AI가 재무 현황을 분석 중입니다...</div>
+</div>
+
+<div class="header">
+  <h1>💰 개인 신용 리스크 분석기</h1>
+  <p>나이·재무 데이터 기반 맞춤형 신용 리스크 진단 및 AI 조언</p>
+</div>
+
+<div class="container">
+  <!-- ── 입력 폼 ── -->
+  <div>
+    <div class="card">
+      <div class="card-header">📝 재무 정보 입력</div>
+      <div class="card-body">
+
+        <div class="form-section">
+          <div class="form-section-title">기본 정보</div>
+
+          <div class="field">
+            <label>나이 (만) <span class="hint">선택</span></label>
+            <input type="number" id="age" placeholder="예: 28" min="13" max="99">
+          </div>
+          <div class="field">
+            <label>연 소득 <span class="hint">만원</span></label>
+            <input type="number" id="income" placeholder="예: 4800" required>
+          </div>
+          <div class="field">
+            <label>연 지출 <span class="hint">만원</span></label>
+            <input type="number" id="expense" placeholder="예: 3600" required>
+          </div>
+          <div class="field">
+            <label>총 부채 <span class="hint">만원</span></label>
+            <input type="number" id="debt" placeholder="예: 8000" required>
+          </div>
+          <div class="field">
+            <label>총 자산 <span class="hint">만원, 부동산·금융자산 합계</span></label>
+            <input type="number" id="assets" placeholder="예: 15000" required>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">신용 정보 <span class="hint" style="text-transform:none">선택</span></div>
+          <div class="field">
+            <label>신용점수 <span class="hint">300–700</span></label>
+            <input type="number" id="credit_score" placeholder="예: 680" min="300" max="700">
+          </div>
+          <div class="field">
+            <label>연체 이력</label>
+            <select id="delinquency">
+              <option value="없음">없음</option>
+              <option value="1회">1회</option>
+              <option value="다수">다수</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="advanced-toggle" onclick="toggleAdvanced()" id="advBtn">
+          ⚙️ 고급 설정 ▼
+        </button>
+        <div class="advanced-section" id="advancedSection">
+          <div class="form-section">
+            <div class="field">
+              <label>소득 증가율 <span class="hint">연 %, 선택</span></label>
+              <input type="number" id="income_growth_rate" placeholder="예: 3" step="0.1">
+            </div>
+            <div class="field">
+              <label>지출 증가율 <span class="hint">연 %, 선택</span></label>
+              <input type="number" id="expense_growth_rate" placeholder="예: 2" step="0.1">
+            </div>
+            <div class="field">
+              <label>투자 수익률 <span class="hint">연 %, 선택</span></label>
+              <input type="number" id="investment_return_rate" placeholder="예: 5" step="0.1">
+            </div>
+            <div class="field">
+              <label>은퇴 희망 나이 <span class="hint">선택</span></label>
+              <input type="number" id="retirement_age" placeholder="예: 60" min="40" max="80">
+            </div>
+            <div class="field">
+              <label>부양가족</label>
+              <select id="dependents">
+                <option value="없음">없음</option>
+                <option value="있음">있음</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-analyze" onclick="analyze()" id="analyzeBtn">
+          🔍 분석 시작
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 결과 ── -->
+  <div class="results" id="results">
+
+    <!-- 현재 상태 -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">📊 현재 재무 상태</div>
+      <div class="card-body">
+
+        <div class="risk-summary-row">
+          <!-- 리스크 게이지 -->
+          <div class="card" style="box-shadow:none;border-color:var(--border)">
+            <div class="gauge-container">
+              <svg class="gauge-svg" viewBox="0 0 140 140">
+                <circle cx="70" cy="70" r="54" fill="none" stroke="#e2e8f0" stroke-width="14"/>
+                <circle id="gaugeFill" cx="70" cy="70" r="54" fill="none" stroke="#dc2626"
+                  stroke-width="14" stroke-linecap="round"
+                  stroke-dasharray="339.3 339.3" stroke-dashoffset="339.3"
+                  transform="rotate(-90 70 70)"
+                  style="transition:stroke-dashoffset 0.8s ease,stroke 0.5s"/>
+                <text id="gaugeVal" x="70" y="66" text-anchor="middle"
+                  font-size="22" font-weight="800" fill="#1e293b">—</text>
+                <text x="70" y="85" text-anchor="middle"
+                  font-size="9" fill="#64748b">리스크 확률</text>
+              </svg>
+              <div id="gaugeLevel" class="gauge-level level-medium">분석 전</div>
+            </div>
+          </div>
+
+          <!-- 나이대 백분위 -->
+          <div class="card" id="agePctCard" style="box-shadow:none;border-color:var(--border);display:none">
+            <div class="age-pct-box">
+              <div class="age-pct-title">🎯 나이대 비교</div>
+              <div class="age-pct-label" id="agePctLabel">—</div>
+              <div class="pct-bar-wrap">
+                <div class="pct-bar-track">
+                  <div class="pct-marker" id="pctMarker" style="left:0%"></div>
+                </div>
+              </div>
+              <div class="pct-bar-labels">
+                <span>안전권</span>
+                <span>평균</span>
+                <span>고위험권</span>
+              </div>
+              <div class="pct-desc" id="agePctDesc">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 핵심 지표 -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="metric-value" id="mDebtRatio">—</div>
+            <div class="metric-unit">배</div>
+            <div class="metric-label">부채/수입 비율</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value" id="mExpenseRatio">—</div>
+            <div class="metric-unit">배</div>
+            <div class="metric-label">지출/수입 비율</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value" id="mSurvival">—</div>
+            <div class="metric-unit" id="mSurvivalUnit">년</div>
+            <div class="metric-label" id="mSurvivalLabel">자금 유지 기간</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI 조언 -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🤖 AI 맞춤 조언</div>
+      <div class="card-body">
+        <div class="advice-summary" id="adviceSummary">분석 중...</div>
+
+        <div class="section-label">⚠️ 주요 리스크 요인</div>
+        <div class="risk-factors" id="riskFactors"></div>
+
+        <div class="section-label">✅ 개선 권고사항</div>
+        <div class="action-cards" id="actionCards"></div>
+      </div>
+    </div>
+
+    <!-- 시나리오 분석 -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">🔭 시나리오 분석</div>
+      <div class="card-body">
+        <div class="scenarios-grid" id="scenariosGrid"></div>
+      </div>
+    </div>
+
+    <!-- AI 챗봇 -->
+    <div class="card">
+      <div class="card-header">💬 AI 재무 상담 챗봇</div>
+      <div class="card-body">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-msg bot">안녕하세요! 분석 결과를 바탕으로 재무 관련 궁금한 점을 물어보세요 😊</div>
+        </div>
+        <div class="chat-input-row">
+          <input class="chat-input" id="chatInput" type="text"
+            placeholder="예: 지출을 줄이면 얼마나 달라질까요?" onkeydown="if(event.key==='Enter')sendChat()">
+          <button class="chat-send" id="chatSend" onclick="sendChat()">전송</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let analysisContext = null;
+
+function toggleAdvanced() {
+  const sec = document.getElementById('advancedSection');
+  const btn = document.getElementById('advBtn');
+  sec.classList.toggle('open');
+  btn.textContent = sec.classList.contains('open') ? '⚙️ 고급 설정 ▲' : '⚙️ 고급 설정 ▼';
+}
+
+function getVal(id) {
+  const v = document.getElementById(id).value;
+  if (v === '' || v === null) return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+function getSel(id) { return document.getElementById(id).value; }
+
+async function analyze() {
+  const income = getVal('income'), expense = getVal('expense');
+  const debt = getVal('debt'), assets = getVal('assets');
+  if (!income || !expense || debt === null || !assets) {
+    alert('연 소득, 연 지출, 총 부채, 총 자산은 필수 입력입니다.');
+    return;
+  }
+
+  const payload = { income, expense, debt, assets };
+  const age = getVal('age'); if (age) payload.age = age;
+  const cs = getVal('credit_score'); if (cs) payload.credit_score = cs;
+  const delinquency = getSel('delinquency');
+  if (delinquency && delinquency !== '없음') payload.delinquency = delinquency;
+  const igr = getVal('income_growth_rate'); if (igr) payload.income_growth_rate = igr;
+  const egr = getVal('expense_growth_rate'); if (egr) payload.expense_growth_rate = egr;
+  const irr = getVal('investment_return_rate'); if (irr) payload.investment_return_rate = irr;
+  const ra = getVal('retirement_age'); if (ra) payload.retirement_age = ra;
+  const dep = getSel('dependents'); if (dep !== '없음') payload.dependents = dep;
+
+  document.getElementById('loadingOverlay').classList.add('show');
+  document.getElementById('analyzeBtn').disabled = true;
+
+  try {
+    const res = await fetch('/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    analysisContext = { input: payload, risk: data.risk, advice: data.advice };
+    renderResults(data);
+  } catch (e) {
+    alert('분석 중 오류가 발생했습니다: ' + e.message);
+  } finally {
+    document.getElementById('loadingOverlay').classList.remove('show');
+    document.getElementById('analyzeBtn').disabled = false;
+  }
+}
+
+function renderResults(data) {
+  const { risk, scenarios, advice } = data;
+
+  // ── 게이지 ──
+  const prob = risk.probability;
+  const circ = 2 * Math.PI * 54; // 339.3
+  const fill = (prob / 100) * circ;
+  const gaugeFill = document.getElementById('gaugeFill');
+  gaugeFill.setAttribute('stroke-dasharray', `${fill} ${circ}`);
+  gaugeFill.setAttribute('stroke-dashoffset', 0);
+
+  const levelColor = prob >= 60 ? '#dc2626' : prob >= 30 ? '#d97706' : '#059669';
+  gaugeFill.setAttribute('stroke', levelColor);
+  document.getElementById('gaugeVal').textContent = prob + '%';
+
+  const levelEl = document.getElementById('gaugeLevel');
+  const levelText = risk.level === '낮음' ? '🟢 낮음' : risk.level === '보통' ? '🟡 보통' : '🔴 높음';
+  levelEl.textContent = levelText;
+  levelEl.className = 'gauge-level ' + (risk.level === '낮음' ? 'level-low' : risk.level === '보통' ? 'level-medium' : 'level-high');
+
+  // ── 나이대 백분위 ──
+  const agePctCard = document.getElementById('agePctCard');
+  if (risk.age_percentile) {
+    const ap = risk.age_percentile;
+    agePctCard.style.display = '';
+    document.getElementById('agePctLabel').textContent = ap.label;
+    document.getElementById('pctMarker').style.left = ap.percentile + '%';
+
+    const pctDesc = `동 나이대(${ap.age_group}) 100명 중 약 ${Math.round(ap.percentile)}명보다 높은 리스크입니다.`;
+    const subDesc = ap.percentile >= 50
+      ? ` 같은 나이대의 상위 ${ap.top_percent}%에 해당하는 리스크 수준이에요.`
+      : ` 같은 나이대의 하위 ${Math.round(ap.percentile)}%로, 평균보다 안전한 편이에요.`;
+
+    document.getElementById('agePctDesc').innerHTML =
+      `<strong>${pctDesc}</strong>${subDesc}`;
+  } else {
+    agePctCard.style.display = 'none';
+  }
+
+  // ── 핵심 지표 ──
+  document.getElementById('mDebtRatio').textContent = risk.debt_ratio ?? '—';
+  document.getElementById('mExpenseRatio').textContent = risk.expense_ratio ?? '—';
+
+  const sv = risk.survival_years;
+  const sm = risk.survival_mode;
+  if (sm === 'stable') {
+    document.getElementById('mSurvival').textContent = '∞';
+    document.getElementById('mSurvivalUnit').textContent = '';
+    document.getElementById('mSurvivalLabel').textContent = '안정 (흑자)';
+  } else {
+    document.getElementById('mSurvival').textContent = sv;
+    document.getElementById('mSurvivalUnit').textContent = '년';
+    document.getElementById('mSurvivalLabel').textContent =
+      sm === 'debt_payoff' ? '부채 상환까지' : '자산 소진까지';
+  }
+
+  // ── AI 조언 ──
+  document.getElementById('adviceSummary').textContent = advice.summary || '';
+
+  const rfEl = document.getElementById('riskFactors');
+  rfEl.innerHTML = (advice.risk_factors || []).map(f =>
+    `<div class="risk-factor-item"><span class="risk-factor-icon">▲</span><span>${f}</span></div>`
+  ).join('');
+
+  const acEl = document.getElementById('actionCards');
+  acEl.innerHTML = (advice.actions || []).map(a => `
+    <div class="action-card">
+      <div class="action-header">
+        <span class="action-title">${a.title}</span>
+        <span class="priority-badge priority-${a.priority || 'medium'}">${
+          a.priority === 'high' ? '긴급' : a.priority === 'medium' ? '권장' : '선택'
+        }</span>
+      </div>
+      <div class="action-body">
+        <div class="action-desc">${a.description}</div>
+        <div class="action-impact">✅ ${a.impact}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // ── 시나리오 ──
+  const sgEl = document.getElementById('scenariosGrid');
+  sgEl.innerHTML = scenarios.map(s => {
+    const r = s.result;
+    const delta = (r.probability - risk.probability).toFixed(1);
+    const deltaNum = parseFloat(delta);
+    const deltaClass = deltaNum > 0.5 ? 'delta-up' : deltaNum < -0.5 ? 'delta-down' : 'delta-neutral';
+    const deltaText = deltaNum > 0 ? `▲ +${delta}%p` : deltaNum < 0 ? `▼ ${delta}%p` : `= 변화없음`;
+    const afterColor = deltaNum > 2 ? 'text-red' : deltaNum < -2 ? 'text-green' : 'text-orange';
+
+    // 나이대 백분위 변화
+    let agePctHtml = '';
+    if (risk.age_percentile && r.age_percentile) {
+      const before = risk.age_percentile;
+      const after = r.age_percentile;
+      const pctDelta = after.percentile - before.percentile;
+      const afterColor2 = pctDelta > 2 ? 'text-red' : pctDelta < -2 ? 'text-green' : '';
+      agePctHtml = `
+        <div class="scenario-age-pct">
+          <div class="s-age-title">📊 ${before.age_group} 내 위치 변화</div>
+          <div class="s-age-change">
+            <span class="s-age-before">상위 ${before.top_percent}%</span>
+            <span class="s-age-arrow">→</span>
+            <span class="s-age-after ${afterColor2}">상위 ${after.top_percent}%</span>
+            ${pctDelta > 2 ? '<span style="font-size:0.7rem;color:var(--red)">(위험 증가)</span>' :
+              pctDelta < -2 ? '<span style="font-size:0.7rem;color:var(--green)">(개선)</span>' : ''}
+          </div>
+          <div class="s-pct-mini-bar">
+            <div class="s-pct-mini-fill" style="width:${after.percentile}%"></div>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="scenario-card dir-${s.direction}">
+        <div class="scenario-card-header">
+          <div class="scenario-theme-row">
+            <span class="scenario-icon">${s.icon}</span>
+            <span class="scenario-theme">${s.theme}</span>
+          </div>
+          <div class="scenario-premise">"${s.premise}"</div>
+        </div>
+        <div class="scenario-card-body">
+          <div class="scenario-risk-row">
+            <span class="s-risk-before">${risk.probability}%</span>
+            <span class="s-arrow">→</span>
+            <span class="s-risk-after ${afterColor}">${r.probability}%</span>
+            <span class="s-risk-delta ${deltaClass}">${deltaText}</span>
+          </div>
+          ${agePctHtml}
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('results').classList.add('visible');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!analysisContext) {
+    alert('먼저 재무 분석을 실행해 주세요.');
+    return;
+  }
+
+  addChatMsg(msg, 'user');
+  input.value = '';
+  document.getElementById('chatSend').disabled = true;
+
+  const typing = addChatMsg('...', 'bot');
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, context: analysisContext })
+    });
+    const data = await res.json();
+    typing.textContent = data.reply || '답변을 가져오지 못했습니다.';
+  } catch (e) {
+    typing.textContent = '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  } finally {
+    document.getElementById('chatSend').disabled = false;
+    scrollChat();
+  }
+}
+
+function addChatMsg(text, role) {
+  const el = document.createElement('div');
+  el.className = `chat-msg ${role}`;
+  el.textContent = text;
+  document.getElementById('chatMessages').appendChild(el);
+  scrollChat();
+  return el;
+}
+
+function scrollChat() {
+  const el = document.getElementById('chatMessages');
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+</body>
+</html>
